@@ -66,8 +66,25 @@ class ThreadedCamera(object):
             output_image, num_bottles = self.draw_bboxes_with_crosshair(self.frame, filtered_bbox, filtered_label, filtered_conf)
             
             # Add text overlay for the number of bottles displayed on the screen (planned on adding 99 bottles of beer joke :D )
-            text = f'Number of bottles: {num_bottles}'
-            cv2.putText(output_image, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+            detect_text = f'# of bottles: {num_bottles}'
+            #                                       x    y                            size    color  
+            cv2.putText(output_image, detect_text, (10, 30), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 0, 0), 1, cv2.LINE_AA)
+
+            accHD_text = f'Acceleration Data:'
+            cv2.putText(output_image, accHD_text, (10, 60), cv2.FONT_HERSHEY_DUPLEX, 0.6, (0, 255, 0), 1, cv2.LINE_AA)
+            
+            accx_text = f'X: [x value]'
+            cv2.putText(output_image, accx_text, (10, 80), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+            
+            accy_text = f'Y: [y value]'
+            cv2.putText(output_image, accy_text, (10, 100), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+            
+            accz_text = f'Z: [z value]'
+            cv2.putText(output_image, accz_text, (10, 120), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
+            
+            floor_text = f'Distance from Floor: [#]in'
+            cv2.putText(output_image, floor_text, (10, 160), cv2.FONT_HERSHEY_DUPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+
             
             cv2.imshow('frame', output_image)
             cv2.waitKey(self.FPS_MS)
@@ -77,7 +94,7 @@ class ThreadedCamera(object):
         num_bottles = len(bbox)
         for box, lbl in zip(bbox, label):
             
-            # Converting label to string as it fucks up on detection otherwise e-e
+            # Converting label to string
             lbl_str = str(lbl)
             
             # Calculate center coordinates of the box so the cross hair is accurate, also is nice little hack
@@ -88,7 +105,7 @@ class ThreadedCamera(object):
             cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (0, 255, 0), 2)
             
             # Draw label on top of the bounding box AS A STRING!!!! can modify this to look fancy!
-            cv2.putText(frame, lbl_str, (box[0], box[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(frame, lbl_str, (box[0], box[1] - 10), cv2.FONT_HERSHEY_DUPLEX, 0.5, (255, 255, 255), 1)
             
             # Drawing crosshair at the center of the box from the lib 
             cv2.drawMarker(frame, (x_center, y_center), (0, 0, 255), cv2.MARKER_CROSS, 10, 2)
