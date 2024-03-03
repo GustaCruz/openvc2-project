@@ -1,9 +1,9 @@
 #########################################################################
 #                      UCHL - Senior Project                            #
 #                                                                       #
-#   Team: I forgor [Skull emoji]                                        #
+#   Team: Spatial Positioning, Observation, and Tracking System (SPOTS) #
 #                                                                       #
-#   Memebers: Gustavo, Nicole, Drew, Dego, Ricardo                      #
+#   Memebers: Gustavo, Nicole, Drew, Diego, Ricardo                     #
 #                                                                       #
 #   Goal: Using CV2 to work on object detection and preform tasks       #
 #                                                                       #
