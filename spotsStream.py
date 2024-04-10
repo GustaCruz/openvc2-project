@@ -22,11 +22,11 @@ def encode_image_to_base64(image_path):
     with open(image_path, "rb") as image_file:
         encoded_image = base64.b64encode(image_file.read()).decode("utf-8")
     return encoded_image
-
-# HTML page for the MJPEG streaming demo
 CROSSHAIR_IMAGE_PATH = "/home/drewjefferies/Documents/spots/crosshair.png"
 CROSSHAIR_IMAGE_BASE64 = encode_image_to_base64(CROSSHAIR_IMAGE_PATH)
 
+
+# HTML page for the MJPEG streaming demo
 PAGE = f"""\
 <html>
 <head>
@@ -132,6 +132,7 @@ PAGE = f"""\
 </html>
 """
 
+# class for handling streaming output, loads camera frames and updates gps,bmp, and servo data. 
 class StreamingOutput(io.BufferedIOBase):
     def __init__(self):
         self.frame = None
@@ -304,7 +305,7 @@ class StreamingServer(socketserver.ThreadingMixIn, server.HTTPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-# Create Picamera2 instance and configure it
+# Create Picamera2 instance and configure it, may need to adjust the transform depending on how camera is fixed 
 picam2 = Picamera2()
 config = picam2.create_preview_configuration(main={"size": (640, 480)})
 config["transform"] = libcamera.Transform(hflip=1, vflip=1)
