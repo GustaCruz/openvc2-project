@@ -32,7 +32,7 @@ def show_webcam():
         ret, frame = cap.read()
         if ret:
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            frame = cv2.resize(frame, (400, 250))
+            frame = cv2.resize(frame, (580, 350))
             img = Image.fromarray(frame)
             imgtk = ImageTk.PhotoImage(image=img)
             webcam_label.configure(image=imgtk)
@@ -45,7 +45,7 @@ def show_webcam():
     cv2.destroyAllWindows()
 
 root = ctk.CTk()
-root.geometry("520x350")
+root.geometry("800x450")
 root.title("Drone System")
 
 frame = ctk.CTkFrame(master=root)
@@ -54,21 +54,21 @@ frame.pack(pady=10, padx=6, fill="both", expand=False)
 label = ctk.CTkLabel(master=frame, text="Drone System", font=("Roboto", 14), height=0)
 label.pack(pady=1, padx=10, side="top", anchor="n")
 
-main_frame = Frame(master=frame, width=400, height=250, background="black")  
+main_frame = Frame(master=frame, width=500, height=350, background="black")  
 main_frame.pack(pady=1, padx=8, side="right", anchor="ne")
 
 webcam_label = Label(main_frame)
 
 # Load the map image
 map_image = Image.open("C:\\Users\\Gamar\\Pictures\\map.png")
-map_image = map_image.resize((400, 250), Image.ANTIALIAS)
+map_image = map_image.resize((500, 350), Image.ANTIALIAS)
 map_photo = ImageTk.PhotoImage(map_image)
 
 map_label = Label(main_frame, image=map_photo)
 
 # Load the stat image
 stat_image = Image.open("C:\\Users\\Gamar\\Pictures\\stat.png")
-stat_image = stat_image.resize((400, 250), Image.ANTIALIAS)
+stat_image = stat_image.resize((680, 350), Image.ANTIALIAS)
 stat_photo = ImageTk.PhotoImage(stat_image)
 
 stat_label = Label(main_frame, image=stat_photo)
