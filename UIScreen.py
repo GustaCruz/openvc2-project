@@ -4,7 +4,6 @@ from geopy.distance import geodesic
 
 customtkinter.set_default_color_theme("blue")
 
-
 class App(customtkinter.CTk):
 
     APP_NAME = "TkinterMapView with CustomTkinter"
@@ -19,9 +18,6 @@ class App(customtkinter.CTk):
         self.minsize(App.WIDTH, App.HEIGHT)
         
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
-        self.bind("<Command-q>", self.on_closing)
-        self.bind("<Command-w>", self.on_closing)
-        self.createcommand('tk::mac::Quit', self.on_closing)
 
         self.marker_list = []
 
@@ -104,7 +100,8 @@ class App(customtkinter.CTk):
         self.button_search.grid(row=0, column=1, sticky="w", padx=(12, 0), pady=1)
 
         # Set default values
-        self.map_widget.set_address("University of Houston - Clear Lake")
+        self.map_widget.set_position(29.5783681, -95.1041635)  # Example coordinates for University of Houston - Clear Lake
+        self.map_widget.set_zoom(16)
         self.map_option_menu.set("OpenStreetMap")
 
     def search_event(self, event=None):
@@ -147,7 +144,7 @@ class App(customtkinter.CTk):
 
     def change_map(self, new_map: str):
         if new_map == "OpenStreetMap":
-            self.map_widget.set_tile_server("https://a.tile.openstreetmap.org/{z}/{x}/{y}.png")
+            self.map_widget.set_tile_server("https://a.tile.openstreetmap.org/{z}/{x}/{y}.png", max_zoom=1)
         elif new_map == "Google normal":
             self.map_widget.set_tile_server("https://mt0.google.com/vt/lyrs=m&hl=en&x={x}&y={y}&z={z}&s=Ga",
                                              max_zoom=22)
@@ -160,7 +157,6 @@ class App(customtkinter.CTk):
 
     def start(self):
         self.mainloop()
-
 
 if __name__ == "__main__":
     app = App()
