@@ -29,14 +29,30 @@ def move_mouse(x, y):
     elif y == 1:  # Down
         pyautogui.moveRel(0, 10)
 
+def print_joystick_direction(x, y):
+    if x == 0 and y == 1:
+        print("Joystick moved Up")
+    elif x == 0 and y == 0:
+        print("Joystick moved Down")
+    elif x == 1 and y == 1:
+        print("Joystick moved Right")
+    elif x == 1 and y == 0:
+        print("Joystick moved Left")
+    else:
+        print("Joystick in Neutral position")
+
+def print_button_state():
+    if GPIO.input(SW_PIN) == 0:
+        print("Button pressed")
+    else:
+        print("Button released")
+
 try:
     while True:
         x, y = read_joystick()
         move_mouse(x, y)
-
-        # Check for button press (click)
-        if GPIO.input(SW_PIN) == 0:
-            pyautogui.click()
+        print_joystick_direction(x, y)
+        print_button_state()
 
         sleep(0.1)  # Add delay to avoid overwhelming the system
 
