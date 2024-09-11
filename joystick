@@ -41,18 +41,28 @@ def print_joystick_direction(x, y):
     else:
         print("Joystick in Neutral position")
 
-def print_button_state():
-    if GPIO.input(SW_PIN) == 0:
+def print_button_state(prev_button_state):
+    current_button_state = GPIO.input(SW_PIN) == 0
+    if current_button_state and not prev_button_state:
         print("Button pressed")
-    else:
+    elif not current_button_state and prev_button_state:
         print("Button released")
+    return current_button_state
+
+prev_x, prev_y = read_joystick()
+prev_button_state = GPIO.input(SW_PIN) == 0
 
 try:
     while True:
         x, y = read_joystick()
-        move_mouse(x, y)
-        print_joystick_direction(x, y)
-        print_button_state()
+        button_state = print_button_state(prev_button_state)
+        
+        if x != prev_x or y != prev_y:
+            move_mouse(x, y)
+            print_joystick_direction(x, y)
+        
+        prev_x, prev_y = x, y
+        prev_button_state = button_state
 
         sleep(0.1)  # Add delay to avoid overwhelming the system
 
