@@ -6,7 +6,6 @@ import customtkinter as ctk
 from tkintermapview import TkinterMapView
 from geopy.distance import geodesic
 
-# Set CustomTkinter appearance and theme
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
@@ -37,7 +36,7 @@ class App(ctk.CTk):
         self.label.pack(pady=1, padx=10, side="top", anchor="n")
 
         # Main frame for webcam and map (overlayed)
-        self.main_frame = Frame(master=self.frame, width=500, height=350, background="black")
+        self.main_frame = Frame(master=self.frame, width=500, height=380, background="black")
         self.main_frame.pack(pady=1, padx=8, side="top", anchor="ne", fill="both", expand=True)
 
         # Webcam display label
@@ -45,7 +44,7 @@ class App(ctk.CTk):
         self.webcam_label.pack()  # Start with webcam
 
         # Initialize map widget
-        self.map_widget = TkinterMapView(self.main_frame, corner_radius=0, width=620, height=350)
+        self.map_widget = TkinterMapView(self.main_frame, corner_radius=0, width=790, height=390)
         self.map_widget.set_position(29.5783681, -95.1041635)  # Example coordinates
         self.map_widget.set_zoom(16)
         self.map_widget.place_forget()  # Hide map initially
