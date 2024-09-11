@@ -1,0 +1,44 @@
+import RPi.GPIO as GPIO
+import pyautogui
+from time import sleep
+
+# Setup GPIO pins for joystick
+VRX_PIN = 17  # Pin for horizontal movement
+VRY_PIN = 27  # Pin for vertical movement
+SW_PIN = 22   # Pin for button press
+
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(VRX_PIN, GPIO.IN)
+GPIO.setup(VRY_PIN, GPIO.IN)
+GPIO.setup(SW_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+def read_joystick():
+    x_val = GPIO.input(VRX_PIN)
+    y_val = GPIO.input(VRY_PIN)
+    return x_val, y_val
+
+def move_mouse(x, y):
+    # Map joystick values to mouse movements
+    if x == 0:  # Left
+        pyautogui.moveRel(-10, 0)
+    elif x == 1:  # Right
+        pyautogui.moveRel(10, 0)
+    
+    if y == 0:  # Up
+        pyautogui.moveRel(0, -10)
+    elif y == 1:  # Down
+        pyautogui.moveRel(0, 10)
+
+try:
+    while True:
+        x, y = read_joystick()
+        move_mouse(x, y)
+
+        # Check for button press (click)
+        if GPIO.input(SW_PIN) == 0:
+            pyautogui.click()
+
+        sleep(0.1)  # Add delay to avoid overwhelming the system
+
+except KeyboardInterrupt:
+    GPIO.cleanup()
