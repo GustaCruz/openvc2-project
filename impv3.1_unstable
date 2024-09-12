@@ -1,0 +1,242 @@
+import cv2
+import threading
+import time
+from tkinter import Frame, Label, Tk
+from PIL import Image, ImageTk
+import customtkinter as ctk
+from tkintermapview import TkinterMapView
+from geopy.distance import geodesic
+import board
+import busio
+import digitalio
+import adafruit_rfm69
+import RPi.GPIO as GPIO
+
+# External modules (weatherAPI and dataLogScript)
+import weatherAPI
+import dataLogScript
+
+# Setting appearance
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("dark-blue")
+
+# SPI and RFM69 setup
+spi = busio.SPI(board.SCK, MOSI=board.MOSI, MISO=board.MISO)
+cs = digitalio.DigitalInOut(board.D5)
+reset = digitalio.DigitalInOut(board.D25)
+rfm69 = adafruit_rfm69.RFM69(spi, cs, reset, 915.0)
+
+# Button GPIO pins
+BUTTON1_PIN = 26
+BUTTON2_PIN = 19
+
+# GPIO setup
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(BUTTON1_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(BUTTON2_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+
+# Global variables for displaying data
+altStr = latStr = lonStr = angStr = dPressureStr = "N/A"
+pressure = sentPKT = receivedPKT = missedPKT = 0
+
+# GUI Application
+class App(ctk.CTk):
+    APP_NAME = "SPOTS Pilot System"
+    WIDTH = 800
+    HEIGHT = 450
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.title(App.APP_NAME)
+        self.geometry(f"{App.WIDTH}x{App.HEIGHT}")
+        self.minsize(App.WIDTH, App.HEIGHT)
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+        self.init_ui()
+        self.start_webcam_thread()
+        self.start_data_thread()
+
+    def init_ui(self):
+        self.frame = ctk.CTkFrame(master=self)
+        self.frame.pack(pady=10, padx=6, fill="both", expand=True)
+
+        self.label = ctk.CTkLabel(master=self.frame, text="Drone System", font=("Roboto", 14), height=0)
+        self.label.pack(pady=1, padx=10, side="top", anchor="n")
+
+        self.main_frame = Frame(master=self.frame, width=500, height=380, background="black")
+        self.main_frame.pack(pady=1, padx=8, side="top", anchor="ne", fill="both", expand=True)
+
+        self.webcam_label = Label(self.main_frame)
+        self.webcam_label.pack()
+
+        self.map_widget = TkinterMapView(self.main_frame, corner_radius=0, width=790, height=390)
+        self.map_widget.set_position(29.5783681, -95.1041635)
+        self.map_widget.set_zoom(16)
+        self.map_widget.place_forget()
+
+        self.map_controls_frame = ctk.CTkFrame(master=self.main_frame, width=150, height=220, corner_radius=0, fg_color=None)
+        self.map_controls_frame.place_forget()
+
+        self.create_map_controls()
+        self.create_stat_page()
+        self.create_nav_buttons()
+
+    def create_map_controls(self):
+        self.label_marker1 = ctk.CTkLabel(master=self.map_controls_frame, text="Marker 1:", anchor="w")
+        self.label_marker1.pack(pady=(2, 0), padx=(1, 10))
+
+        self.entry_marker1 = ctk.CTkEntry(master=self.map_controls_frame, placeholder_text="Paste your coords...")
+        self.entry_marker1.pack(pady=(2, 0), padx=(10, 10))
+
+        self.button_add_marker1 = ctk.CTkButton(master=self.map_controls_frame, text="Add Marker 1", command=self.add_marker1_event)
+        self.button_add_marker1.pack(pady=(1, 5), padx=(10, 10))
+
+        self.button_clear_markers = ctk.CTkButton(master=self.map_controls_frame, text="Clear Markers", command=self.clear_marker_event)
+        self.button_clear_markers.pack(pady=(5, 10), padx=(10, 10))
+
+    def create_stat_page(self):
+        self.stats_frame = ctk.CTkFrame(master=self.main_frame, width=150, height=220, corner_radius=0, fg_color=None)
+        self.stats_frame.place_forget()
+
+        self.stats_label = ctk.CTkLabel(self.stats_frame, text="Stats Page", anchor="center")
+        self.stats_label.pack(pady=(10, 0), padx=(10, 10))
+
+        self.stats_data_label = ctk.CTkLabel(self.stats_frame, text="", anchor="center", font=("Roboto", 12))
+        self.stats_data_label.pack(pady=(20, 10), padx=(10, 10))
+
+    def create_nav_buttons(self):
+        self.nav_buttons_frame = ctk.CTkFrame(master=self.frame, height=50, corner_radius=0)
+        self.nav_buttons_frame.pack(side="bottom", fill="x")
+
+        buttons = [
+            ("MAIN", self.switch_to_webcam),
+            ("MAP", self.switch_to_map),
+            ("STAT", self.switch_to_stat),
+            ("QUIT", self.on_closing),
+        ]
+        for btn_text, command in buttons:
+            self.create_nav_button(btn_text, command)
+
+    def create_nav_button(self, text, command):
+        button = ctk.CTkButton(master=self.nav_buttons_frame, text=text, command=command, width=70, height=30)
+        button.pack(side="left", padx=6, pady=4)
+
+    def switch_to_webcam(self):
+        self.webcam_label.pack()
+        self.map_widget.place_forget()
+        self.map_controls_frame.place_forget()
+        self.stats_frame.place_forget()
+
+    def switch_to_map(self):
+        self.webcam_label.pack_forget()
+        self.stats_frame.place_forget()
+        self.map_controls_frame.place(x=0, y=0)
+        self.map_widget.place(x=0, y=0)
+
+    def switch_to_stat(self):
+        self.webcam_label.pack_forget()
+        self.map_widget.place_forget()
+        self.map_controls_frame.place_forget()
+        self.stats_frame.place(x=0, y=0)
+        self.update_stats_data()
+
+    def update_stats_data(self):
+        data_text = (
+            f"Altitude: {altStr}\n"
+            f"Latitude: {latStr}\n"
+            f"Longitude: {lonStr}\n"
+            f"Angle: {angStr}\n"
+            f"Pressure: {pressure}\n"
+            f"Pressure Diff: {dPressureStr}\n"
+            f"Sent Packets: {sentPKT}\n"
+            f"Received Packets: {receivedPKT}\n"
+            f"Missed Packets: {missedPKT}\n"
+        )
+        self.stats_data_label.configure(text=data_text)
+
+    def start_webcam_thread(self):
+        self.thread = threading.Thread(target=self.show_webcam)
+        self.thread.daemon = True
+        self.thread.start()
+
+    def show_webcam(self):
+        cap = cv2.VideoCapture(0)
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if ret:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                frame = cv2.resize(frame, (580, 350))
+                img = Image.fromarray(frame)
+                imgtk = ImageTk.PhotoImage(image=img)
+                self.webcam_label.configure(image=imgtk)
+                self.webcam_label.image = imgtk
+            if cv2.waitKey(1) == ord('q'):
+                break
+        cap.release()
+
+    def start_data_thread(self):
+        self.data_thread = threading.Thread(target=self.data_loop)
+        self.data_thread.daemon = True
+        self.data_thread.start()
+
+    def data_loop(self):
+        global altStr, latStr, lonStr, angStr, dPressureStr, pressure, sentPKT, receivedPKT, missedPKT
+        while True:
+            handle_buttons()
+            update_pressure()
+            send_control_data(servoAng, pressure)
+            packet_text = receive_packet()
+            if packet_text:
+                altStr, latStr, lonStr, angStr, dPressureStr = split_packet(packet_text)
+            time.sleep(1)
+
+    def on_closing(self):
+        self.destroy()
+
+# Supporting functions from second code
+def handle_buttons():
+    global servoAng
+    button1_pressed = not GPIO.input(BUTTON1_PIN)
+    button2_pressed = not GPIO.input(BUTTON2_PIN)
+
+    if button1_pressed:
+        servoAng += 5  # Increment servo angle
+    if button2_pressed:
+        servoAng -= 5  # Decrement servo angle
+
+    # Limit the angle range between 0 and 180 degrees
+    servoAng = max(0, min(180, servoAng))
+
+def update_pressure():
+    global pressure
+    pressure = dataLogScript.get_current_pressure()  # Get current pressure from module
+
+def send_control_data(servo_ang, pressure):
+    control_data = f"S:{servo_ang},P:{pressure}"
+    rfm69.send(bytes(control_data, "utf-8"))  # Send control data
+
+def receive_packet():
+    packet = None
+    if rfm69.available():
+        packet = rfm69.receive()
+        if packet is not None:
+            return packet.decode("utf-8")
+    return None
+
+def split_packet(packet_text):
+    try:
+        data = packet_text.split(",")
+        alt_str = data[0].split(":")[1]
+        lat_str = data[1].split(":")[1]
+        lon_str = data[2].split(":")[1]
+        ang_str = data[3].split(":")[1]
+        d_pressure_str = data[4].split(":")[1]
+        return alt_str, lat_str, lon_str, ang_str, d_pressure_str
+    except (IndexError, ValueError):
+        return "N/A", "N/A", "N/A", "N/A", "N/A"
+
+# Main function to start the application
+if __name__ == "__main__":
+    app = App()
+    app.mainloop()
+
