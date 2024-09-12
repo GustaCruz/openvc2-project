@@ -3,25 +3,25 @@ import spidev
 import time
 import dataLogScript
 
-# Global variables
+# Global vars
 receivedPKT = 0
 missedPKT = 0
 
 # SPI and RFM69 setup
 spi = spidev.SpiDev()
 spi.open(0, 0)  # Use SPI bus 0, device 0
-spi.max_speed_hz = 5000000  # Adjust speed as necessary for your module
+spi.max_speed_hz = 5000000  # Adjust speed 
 
-# Define GPIO pins for CS and RESET
+# Define CS and RESET
 CS_PIN = 5
 RESET_PIN = 25
 
-# Setup GPIO for CS and RESET pins
+# Setup CS and RESET 
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(CS_PIN, GPIO.OUT)
 GPIO.setup(RESET_PIN, GPIO.OUT)
-
-# Packet processing function with error handling
+# ---------------------------------------------------------------------------
+# Packet processing
 def split_packet(packet_text):
     values = packet_text.split("+")
     if len(values) == 5:
@@ -35,7 +35,7 @@ def split_packet(packet_text):
 def receive_packet():
     global receivedPKT, missedPKT
     try:
-        packet = spi.xfer2([0x00] * 32)  # Receiving data via SPI (example size of 32 bytes)
+        packet = spi.xfer2([0x00] * 32)  # Receiving data SPI (32 bytes)
         packet_text = "".join([chr(b) for b in packet if b != 0])
         if len(packet_text) == 0:
             return None
@@ -48,7 +48,7 @@ def receive_packet():
         print(f"Error receiving packet: {e}")
         return None
 
-## MAIN LOOP ----------------------------
+## MAIN LOOP ---------------------------------------------------------------------
 try:
     while True:
         packet_text = receive_packet()
