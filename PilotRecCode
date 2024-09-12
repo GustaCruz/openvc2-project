@@ -1,0 +1,78 @@
+import RPi.GPIO as GPIO
+import spidev
+import time
+import dataLogScript
+
+# Global variables
+receivedPKT = 0
+missedPKT = 0
+
+# SPI and RFM69 setup
+spi = spidev.SpiDev()
+spi.open(0, 0)  # Use SPI bus 0, device 0
+spi.max_speed_hz = 5000000  # Adjust speed as necessary for your module
+
+# Define GPIO pins for CS and RESET
+CS_PIN = 5
+RESET_PIN = 25
+
+# Setup GPIO for CS and RESET pins
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(CS_PIN, GPIO.OUT)
+GPIO.setup(RESET_PIN, GPIO.OUT)
+
+# Packet processing function with error handling
+def split_packet(packet_text):
+    values = packet_text.split("+")
+    if len(values) == 5:
+        return values
+    else:
+        print("Received corrupted packet, discarding")
+        global missedPKT
+        missedPKT += 1
+        return [None] * 5
+
+def receive_packet():
+    global receivedPKT, missedPKT
+    try:
+        packet = spi.xfer2([0x00] * 32)  # Receiving data via SPI (example size of 32 bytes)
+        packet_text = "".join([chr(b) for b in packet if b != 0])
+        if len(packet_text) == 0:
+            return None
+        receivedPKT += 1
+        return packet_text
+    except UnicodeDecodeError:
+        missedPKT += 1
+        return None
+    except Exception as e:
+        print(f"Error receiving packet: {e}")
+        return None
+
+## MAIN LOOP ----------------------------
+try:
+    while True:
+        packet_text = receive_packet()
+        if packet_text:
+            # Process the packet text received from the drone
+            altStr, latStr, lonStr, angStr, dPressureStr = split_packet(packet_text)
+            
+            # If valid data is received, log it
+            if altStr is not None:
+                altStr = altStr if altStr else '0'
+                latStr = latStr if latStr else '0'
+                lonStr = lonStr if lonStr else '0'
+                angStr = angStr if angStr else '0'
+                dPressureStr = dPressureStr if dPressureStr else '0'
+
+                # Log the data to dataLogScript or take necessary actions
+                dataLogScript.log_data(
+                    altStr, latStr, lonStr, angStr, dPressureStr, receivedPKT, missedPKT
+                )
+                
+                # Print the received data for confirmation
+                print(f"Received data: Alt: {altStr}, Lat: {latStr}, Lon: {lonStr}, Angle: {angStr}, dPressure: {dPressureStr}")
+except KeyboardInterrupt:
+    GPIO.cleanup()  # Clean up GPIO on CTRL+C exit
+except Exception as e:
+    print(f"An unexpected error occurred: {e}")
+    GPIO.cleanup()
