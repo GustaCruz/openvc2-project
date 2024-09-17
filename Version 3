@@ -15,9 +15,10 @@
 
 import cv2
 import threading
+import datetime
+import customtkinter as ctk
 from tkinter import Frame, Label, Tk
 from PIL import Image, ImageTk, ImageGrab
-import customtkinter as ctk
 from tkintermapview import TkinterMapView
 from geopy.distance import geodesic
 
