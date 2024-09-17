@@ -7,7 +7,7 @@
 #                                                                       #
 #   Goal:                                                               #
 #                                                                       #
-#   Notes:  UI Version 3: MAIN, MAP, STAT, QUIT are working             #
+#   Notes:  UI Version 3: MAIN, MAP, STAT, SETT, QUIT are working       #
 #   Link: https://github.com/GustaCruz/openvc2-project/                 #
 #                                                                       #
 #########################################################################
@@ -145,7 +145,7 @@ class App(ctk.CTk):
 
         for btn_text, command in [("MAIN", self.switch_to_webcam), ("MAP", self.switch_to_map), 
                                   ("STAT", self.switch_to_stat), ("SNAP", lambda: print("SNAP clicked")), 
-                                  ("SETT", lambda: print("SETT clicked")), ("QUIT", self.on_closing)]:
+                                  ("SETT", self.switch_to_stat), ("QUIT", self.on_closing)]:
             self.create_nav_button(btn_text, command)
 
     def create_nav_button(self, text, command):
@@ -190,6 +190,11 @@ class App(ctk.CTk):
         self.map_widget.place(x=0, y=0)
 
     def switch_to_stat(self):
+        self.webcam_label.pack_forget()
+        self.map_widget.place_forget()
+        self.map_controls_frame.place_forget()
+
+    def switch_to_sett(self):
         self.webcam_label.pack_forget()
         self.map_widget.place_forget()
         self.map_controls_frame.place_forget()
