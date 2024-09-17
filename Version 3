@@ -153,6 +153,7 @@ class App(ctk.CTk):
         button.pack(side="left", padx=6, pady=4)
 
 # SCREENSHOT OF UI ============================================================
+
     def take_screenshot(self):
         # Capture the current screen
         screenshot = ImageGrab.grab()
