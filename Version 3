@@ -1,3 +1,18 @@
+#########################################################################
+#                      UCHL - Senior Project                            #
+#                                                                       #
+#   Team: Spatial Positioning, Observation, and Tracking System (SPOTS) #
+#                                                                       #
+#   Memebers: Gustavo, Nicole, Drew, Diego, Ricardo                     #
+#                                                                       #
+#   Goal:                                                               #
+#                                                                       #
+#   Notes:  UI Version 3: MAIN, MAP, STAT, QUIT are working             #
+#   Link: https://github.com/GustaCruz/openvc2-project/                 #
+#                                                                       #
+#########################################################################
+# pip install opencv-python customtkinter tkintermapview geopy requests tk adafruit-circuitpython-rfm69 RPi.GPIO weatherapi pyDatalog sqlalchemy
+
 import cv2
 import threading
 from tkinter import Frame, Label, Tk
@@ -5,8 +20,6 @@ from PIL import Image, ImageTk
 import customtkinter as ctk
 from tkintermapview import TkinterMapView
 from geopy.distance import geodesic
-
-# pip install opencv-python customtkinter tkintermapview geopy requests tk adafruit-circuitpython-rfm69 RPi.GPIO weatherapi pyDatalog sqlalchemy
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
