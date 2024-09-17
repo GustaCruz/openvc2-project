@@ -11,12 +11,12 @@
 #   Link: https://github.com/GustaCruz/openvc2-project/                 #
 #                                                                       #
 #########################################################################
-# pip install opencv-python customtkinter tkintermapview geopy requests tk adafruit-circuitpython-rfm69 RPi.GPIO weatherapi pyDatalog sqlalchemy
+# pip install opencv-python customtkinter tkintermapview geopy requests tk adafruit-circuitpython-rfm69 RPi.GPIO weatherapi pyDatalog sqlalchemy image pillow
 
 import cv2
 import threading
 from tkinter import Frame, Label, Tk
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageGrab
 import customtkinter as ctk
 from tkintermapview import TkinterMapView
 from geopy.distance import geodesic
@@ -144,14 +144,25 @@ class App(ctk.CTk):
         self.nav_buttons_frame.pack(side="bottom", fill="x")
 
         for btn_text, command in [("MAIN", self.switch_to_webcam), ("MAP", self.switch_to_map), 
-                                  ("STAT", self.switch_to_stat), ("SNAP", lambda: print("SNAP clicked")), 
-                                  ("SETT", lambda: print("SETT clicked")), ("QUIT", self.on_closing)]:
+                                  ("STAT", self.switch_to_stat), ("SNAP", self.take_screenshot), 
+                                  ("SETT", self.switch_to_sett), ("QUIT", self.on_closing)]:
             self.create_nav_button(btn_text, command)
 
     def create_nav_button(self, text, command):
         button = ctk.CTkButton(master=self.nav_buttons_frame, text=text, command=command, width=70, height=30)
         button.pack(side="left", padx=6, pady=4)
-        
+
+# SCREENSHOT OF UI ============================================================
+    def take_screenshot(self):
+        # Capture the current screen
+        screenshot = ImageGrab.grab()
+
+        # Save the screenshot with a timestamp in the filename
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        screenshot.save(f"screenshot_{timestamp}.png")
+
+        print(f"Screenshot saved as screenshot_{timestamp}.png")
+
 # WEBCAM SETUP ====================================================================================
 
     def start_webcam_thread(self):
@@ -190,6 +201,11 @@ class App(ctk.CTk):
         self.map_widget.place(x=0, y=0)
 
     def switch_to_stat(self):
+        self.webcam_label.pack_forget()
+        self.map_widget.place_forget()
+        self.map_controls_frame.place_forget()
+
+    def switch_to_sett(self):
         self.webcam_label.pack_forget()
         self.map_widget.place_forget()
         self.map_controls_frame.place_forget()
