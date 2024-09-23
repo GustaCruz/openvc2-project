@@ -17,6 +17,7 @@ import cv2
 import threading
 import datetime
 import customtkinter as ctk
+import pilotcomm
 from tkinter import Frame, Label, Tk
 from PIL import Image, ImageTk, ImageGrab
 from tkintermapview import TkinterMapView
@@ -24,6 +25,15 @@ from geopy.distance import geodesic
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
+
+#Global varaibles to store pilot/drone positional data
+altitude = None
+droneLat = None
+droneLon = None
+servoAng = None
+pilotLat = None
+pilotLon = None
+
 
 class App(ctk.CTk):
     APP_NAME = "SPOTS Pilot System"
@@ -175,6 +185,17 @@ class App(ctk.CTk):
     def show_webcam(self):
         cap = cv2.VideoCapture(0) # CHANGE VALUE IF WEBCAM IS NOT SHOWING ==============
         while cap.isOpened():
+            global altitude, droneLat, droneLon, pilotLat, pilotLon, servoAng
+            Talt, Tlat, Tlon, pilotLat, pilotLon, Tangle = pilotcomm.sendReceieve()
+            if Talt != None:
+                altitude = Talt
+                droneLat = Tlat
+                droneLon = Tlon
+                servoAng = Tangle
+                print(altitude)
+                print(droneLat)
+                print(droneLon)
+
             ret, frame = cap.read()
             if ret: # CROSSHAIR ========================================================
                 height, width, _ = frame.shape
