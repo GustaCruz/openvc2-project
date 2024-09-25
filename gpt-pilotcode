@@ -1,0 +1,290 @@
+#########################################################################
+#                      UCHL - Senior Project                            #
+#                                                                       #
+#   Team: Spatial Positioning, Observation, and Tracking System (SPOTS) #
+#                                                                       #
+#   Memebers: Gustavo, Nicole, Drew, Diego, Ricardo                     #
+#                                                                       #
+#   Goal:                                                               #
+#                                                                       #
+#   Notes:  UI Version 3: MAIN, MAP, STAT, QUIT are working             #
+#   Link: https://github.com/GustaCruz/openvc2-project/                 #
+#                                                                       #
+#########################################################################
+# pip install opencv-python customtkinter tkintermapview geopy requests tk adafruit-circuitpython-rfm69 RPi.GPIO weatherapi pyDatalog sqlalchemy image pillow
+
+import cv2
+import threading
+import datetime
+import customtkinter as ctk
+import pilotcomm
+from tkinter import Frame, Label, Tk
+from PIL import Image, ImageTk, ImageGrab
+from tkintermapview import TkinterMapView
+from geopy.distance import geodesic
+import board
+import busio
+import digitalio
+import adafruit_rfm69
+import adafruit_gps
+import RPi.GPIO as GPIO
+import serial
+import time  # New import for delays
+
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("dark-blue")
+
+# Global variables to store pilot/drone positional data
+altitude = None
+droneLat = None
+droneLon = None
+servoAng = None
+pilotLat = None
+pilotLon = None
+
+button1 = 26
+button2 = 19
+
+uart = serial.Serial("/dev/serial0", baudrate=9600, timeout=10)
+gps = adafruit_gps.GPS(uart, debug=False)
+gps.send_command(b"PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0")
+gps.send_command(b"PMTK220,1000")
+
+spi = busio.SPI(board.SCK, MOSI=board.MOSI, MISO=board.MISO)
+cs = digitalio.DigitalInOut(board.D5)
+reset = digitalio.DigitalInOut(board.D25)
+rfm69 = adafruit_rfm69.RFM69(spi, cs, reset, 915.0)
+
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(button1, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(button2, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+prev_press = {button1: False, button2: False}
+
+# Servo data
+servoAng = 50.00
+
+# Packet processing functions
+def split_packet(packet_text):
+    values = packet_text.split("+")
+    if len(values) == 5:
+        return values
+    else:
+        print("Packet is corrupted, discarding")
+        return [None] * 5
+
+def send_control_data(servo_angle):
+    controlData = f"{servo_angle}"
+    rfm69.send(bytes(controlData, "utf-8"))
+    print(f"Sending servo angle: {servo_angle}\n")
+
+def receive_packet():
+    packet = rfm69.receive(timeout=0.1)
+    if packet is None:
+        return None
+    try:
+        packet_text = packet.decode('utf-8')
+        return packet_text
+    except UnicodeDecodeError:
+        return None
+
+def handle_buttons():
+    global servoAng, prev_press
+    button1_pressed = not GPIO.input(button1)
+    button2_pressed = not GPIO.input(button2)
+    
+    if button1_pressed != prev_press[button1]:
+        if button1_pressed:
+            servoAng = min(90.00, servoAng + 10.00)
+    if button2_pressed != prev_press[button2]:
+        if button2_pressed:
+            servoAng = max(0.00, servoAng - 10.00)
+
+def get_gps_data():
+    """ Retrieve GPS data. """
+    gps.update()
+    if gps.has_fix:
+        latitude = round(gps.latitude, 5)
+        longitude = round(gps.longitude, 5)
+        return str(latitude), str(longitude)
+    else:
+        return 'NF', 'NF'
+
+# Thread for packet sending and receiving
+def packet_communication():
+    while True:
+        handle_buttons()
+        pilotLat, pilotLon = get_gps_data()
+        send_control_data(servoAng)
+        
+        # Receive packet
+        packet_text = receive_packet()
+        
+        # Check if packet is received
+        if packet_text:
+            # Split the data into array of values
+            altStr, latStr, lonStr, angStr, dPressureStr = split_packet(packet_text)
+            
+            # Check if data is valid
+            if altStr is not None:
+                print(altStr)
+                print(latStr)
+                print(lonStr)
+                print(angStr)
+                
+        # Small delay to prevent overloading
+        time.sleep(0.5)
+
+# Start the communication thread
+def start_communication_thread():
+    comm_thread = threading.Thread(target=packet_communication)
+    comm_thread.daemon = True  # Daemon thread will close with the main program
+    comm_thread.start()
+
+class App(ctk.CTk):
+    APP_NAME = "SPOTS Pilot System"
+    WIDTH = 800
+    HEIGHT = 450
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        self.title(App.APP_NAME)
+        self.geometry(f"{App.WIDTH}x{App.HEIGHT}")
+        self.minsize(App.WIDTH, App.HEIGHT)
+        self.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+        self.marker_list = []
+        self.init_ui()
+        self.start_webcam_thread()
+        start_communication_thread()  # Start the packet communication thread
+
+    def init_ui(self):
+        self.frame = ctk.CTkFrame(master=self)
+        self.frame.pack(pady=10, padx=6, fill="both", expand=True)
+
+        self.label = ctk.CTkLabel(master=self.frame, text="Drone System", font=("Roboto", 14), height=0)
+        self.label.pack(pady=1, padx=10, side="top", anchor="n")
+
+        self.main_frame = Frame(master=self.frame, width=500, height=380, background="black")
+        self.main_frame.pack(pady=1, padx=8, side="top", anchor="ne", fill="both", expand=True)
+
+        self.webcam_label = Label(self.main_frame)
+        self.webcam_label.pack()
+
+        self.map_widget = TkinterMapView(self.main_frame, corner_radius=0, width=790, height=390)
+        self.map_widget.set_position(29.5783681, -95.1041635)
+        self.map_widget.set_zoom(16)
+        self.map_widget.place_forget()
+
+        self.map_controls_frame = ctk.CTkFrame(master=self.main_frame, width=150, height=220, corner_radius=0, fg_color=None)
+        self.map_controls_frame.place_forget()
+
+        self.create_map_controls()
+        self.create_nav_buttons()
+
+    def create_map_controls(self):
+        self.label_marker1 = ctk.CTkLabel(master=self.map_controls_frame, text="Marker 1:", anchor="w")
+        self.label_marker1.pack(pady=(2, 0), padx=(1, 10))
+        self.entry_marker1 = ctk.CTkEntry(master=self.map_controls_frame, placeholder_text="Paste your coords...")
+        self.entry_marker1.pack(pady=(2, 0), padx=(10, 10))
+        self.button_add_marker1 = ctk.CTkButton(master=self.map_controls_frame, text="Add Marker 1", command=self.add_marker1_event)
+        self.button_add_marker1.pack(pady=(1, 5), padx=(10, 10))
+
+        self.label_marker2 = ctk.CTkLabel(master=self.map_controls_frame, text="Marker 2:", anchor="w")
+        self.label_marker2.pack(pady=(5, 0), padx=(10, 10))
+        self.entry_marker2 = ctk.CTkEntry(master=self.map_controls_frame, placeholder_text="Paste your coords...")
+        self.entry_marker2.pack(pady=(5, 0), padx=(10, 10))
+        self.button_add_marker2 = ctk.CTkButton(master=self.map_controls_frame, text="Add Marker 2", command=self.add_marker2_event)
+        self.button_add_marker2.pack(pady=(1, 10), padx=(10, 10))
+
+        self.button_clear_markers = ctk.CTkButton(master=self.map_controls_frame, text="Clear Markers", command=self.clear_marker_event)
+        self.button_clear_markers.pack(pady=(5, 10), padx=(10, 10))
+
+        self.map_label = ctk.CTkLabel(self.map_controls_frame, text="Tile Server:", anchor="w")
+        self.map_label.pack(pady=(1, 0), padx=(10, 10))
+        self.map_option_menu = ctk.CTkOptionMenu(self.map_controls_frame, values=["OpenStreetMap", "Google normal", "Google satellite"], command=self.change_map)
+        self.map_option_menu.pack(pady=(1, 5), padx=(10, 10))
+        self.distance_label = ctk.CTkLabel(self.map_controls_frame, text="Distance: ", anchor="w")
+        self.distance_label.pack(pady=(5, 35), padx=(10, 10))
+        self.map_option_menu.set("OpenStreetMap")
+
+    def add_marker1_event(self):
+        try:
+            lat, lon = self.entry_marker1.get().split(",")
+            lat, lon = float(lat), float(lon)
+            self.marker_list.append(self.map_widget.set_marker(lat, lon, text="Marker 1"))
+        except ValueError:
+            pass
+
+    def add_marker2_event(self):
+        try:
+            lat, lon = self.entry_marker2.get().split(",")
+            lat, lon = float(lat), float(lon)
+            self.marker_list.append(self.map_widget.set_marker(lat, lon, text="Marker 2"))
+        except ValueError:
+            pass
+
+    def clear_marker_event(self):
+        for marker in self.marker_list:
+            marker.delete()
+        self.marker_list.clear()
+
+    def change_map(self, map_type):
+        if map_type == "OpenStreetMap":
+            self.map_widget.set_tile_server("https://a.tile.openstreetmap.org/{z}/{x}/{y}.png")
+        elif map_type == "Google normal":
+            self.map_widget.set_tile_server("https://mt1.google.com/vt/lyrs=r&x={x}&y={y}&z={z}")
+        elif map_type == "Google satellite":
+            self.map_widget.set_tile_server("https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}")
+
+    def create_nav_buttons(self):
+        self.button_main = ctk.CTkButton(self.frame, text="MAIN", width=10, command=self.show_main)
+        self.button_main.pack(side="left", pady=10, padx=5)
+
+        self.button_map = ctk.CTkButton(self.frame, text="MAP", width=10, command=self.show_map)
+        self.button_map.pack(side="left", pady=10, padx=5)
+
+        self.button_stat = ctk.CTkButton(self.frame, text="STAT", width=10, command=self.show_stat)
+        self.button_stat.pack(side="left", pady=10, padx=5)
+
+        self.button_quit = ctk.CTkButton(self.frame, text="QUIT", width=10, command=self.on_closing)
+        self.button_quit.pack(side="left", pady=10, padx=5)
+
+    def show_main(self):
+        self.map_widget.place_forget()
+        self.map_controls_frame.place_forget()
+
+    def show_map(self):
+        self.webcam_label.place_forget()
+        self.map_widget.place(relx=0.5, rely=0.5, anchor="center")
+        self.map_controls_frame.place(relx=0.02, rely=0.02, anchor="nw")
+
+    def show_stat(self):
+        pass
+
+    def start_webcam_thread(self):
+        webcam_thread = threading.Thread(target=self.update_webcam)
+        webcam_thread.daemon = True
+        webcam_thread.start()
+
+    def update_webcam(self):
+        cap = cv2.VideoCapture(0)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 800)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+
+        while True:
+            ret, frame = cap.read()
+            if ret:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                img = Image.fromarray(frame)
+                imgtk = ImageTk.PhotoImage(image=img)
+                self.webcam_label.imgtk = imgtk
+                self.webcam_label.configure(image=imgtk)
+            time.sleep(0.01)
+
+    def on_closing(self):
+        self.destroy()
+
+if __name__ == "__main__":
+    app = App()
+    app.mainloop()
