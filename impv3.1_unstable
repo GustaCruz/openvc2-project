@@ -1,60 +1,133 @@
+#########################################################################
+#                      UCHL - Senior Project                            #
+#                                                                       #
+#   Team: Spatial Positioning, Observation, and Tracking System (SPOTS) #
+#                                                                       #
+#   Memebers: Gustavo, Nicole, Drew, Diego, Ricardo                     #
+#                                                                       #
+#   Goal:                                                               #
+#                                                                       #
+#   Notes:  UI Version 3: MAIN, MAP, STAT, QUIT are working             #
+#   Link: https://github.com/GustaCruz/openvc2-project/                 #
+#                                                                       #
+#########################################################################
+# pip install opencv-python customtkinter tkintermapview geopy requests tk adafruit-circuitpython-rfm69 RPi.GPIO weatherapi pyDatalog sqlalchemy image pillow
+
 import cv2
 import threading
-import time
-from tkinter import Frame, Label, Tk
-from PIL import Image, ImageTk
+import datetime
 import customtkinter as ctk
+import pilotcomm
+from tkinter import Frame, Label, Tk
+from PIL import Image, ImageTk, ImageGrab
 from tkintermapview import TkinterMapView
 from geopy.distance import geodesic
 import board
 import busio
 import digitalio
 import adafruit_rfm69
+import adafruit_gps
 import RPi.GPIO as GPIO
+import serial
 
-# External modules (weatherAPI and dataLogScript)
-import weatherAPI
-import dataLogScript
-
-# Setting appearance
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("dark-blue")
 
-# SPI and RFM69 setup
+#Global varaibles to store pilot/drone positional data
+altitude = None
+droneLat = None
+droneLon = None
+servoAng = None
+pilotLat = None
+pilotLon = None
+
+button1 = 26
+button2 = 19
+
+uart = serial.Serial("/dev/serial0", baudrate=9600,timeout=10)
+gps = adafruit_gps.GPS(uart, debug=False)
+gps.send_command(b"PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0")
+gps.send_command(b"PMTK220,1000")
+
 spi = busio.SPI(board.SCK, MOSI=board.MOSI, MISO=board.MISO)
 cs = digitalio.DigitalInOut(board.D5)
 reset = digitalio.DigitalInOut(board.D25)
 rfm69 = adafruit_rfm69.RFM69(spi, cs, reset, 915.0)
 
-# Button GPIO pins
-BUTTON1_PIN = 26
-BUTTON2_PIN = 19
-
-# GPIO setup
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(BUTTON1_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-GPIO.setup(BUTTON2_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(button1, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+GPIO.setup(button2, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+prev_press = {button1: False, button2: False}
 
-# Global variables for displaying data
-altStr = latStr = lonStr = angStr = dPressureStr = "N/A"
-pressure = sentPKT = receivedPKT = missedPKT = 0
+# Servo data
+servoAng = 50.00
 
-# GUI Application
+# Packet processing functions
+def split_packet(packet_text):
+    values = packet_text.split("+")
+    if len(values) == 5:
+        return values
+    else:
+        print("Packet is corrupted, discarding")
+        global missedPKT
+        missedPKT += 1
+        return [None] * 5
+
+def send_control_data(servo_angle):
+    controlData = f"{servo_angle}"
+    rfm69.send(bytes(controlData, "utf-8"))
+    print(f"Sending servo angle: {servo_angle}\n")
+
+def receive_packet():
+    packet = rfm69.receive(timeout=0.1)
+    if packet is None:
+        return None
+    try:
+        packet_text = packet.decode('utf-8')
+        return packet_text
+    except UnicodeDecodeError:
+        return None
+
+def handle_buttons():
+    global servoAng, prev_press
+    button1_pressed = not GPIO.input(button1)
+    button2_pressed = not GPIO.input(button2)
+    
+    if button1_pressed != prev_press[button1]:
+        if button1_pressed:
+            servoAng = min(90.00, servoAng + 10.00)
+    if button2_pressed != prev_press[button2]:
+        if button2_pressed:
+            servoAng = max(0.00, servoAng - 10.00)
+        
+def get_gps_data():
+    """ Retrieve GPS data. """
+    gps.update()
+    if gps.has_fix:
+        latitude = round(gps.latitude, 5)
+        longitude = round(gps.longitude, 5)
+        return str(latitude), str(longitude)
+    else:
+        return 'NF', 'NF'
+
+
 class App(ctk.CTk):
     APP_NAME = "SPOTS Pilot System"
+    # GENRAL APP SIZE ==============================================
     WIDTH = 800
     HEIGHT = 450
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
         self.title(App.APP_NAME)
         self.geometry(f"{App.WIDTH}x{App.HEIGHT}")
         self.minsize(App.WIDTH, App.HEIGHT)
         self.protocol("WM_DELETE_WINDOW", self.on_closing)
 
+        self.marker_list = []
         self.init_ui()
         self.start_webcam_thread()
-        self.start_data_thread()
 
     def init_ui(self):
         self.frame = ctk.CTkFrame(master=self)
@@ -68,91 +141,117 @@ class App(ctk.CTk):
 
         self.webcam_label = Label(self.main_frame)
         self.webcam_label.pack()
+        
+# MAP STARTING POINT ==============================================================================
 
         self.map_widget = TkinterMapView(self.main_frame, corner_radius=0, width=790, height=390)
         self.map_widget.set_position(29.5783681, -95.1041635)
         self.map_widget.set_zoom(16)
         self.map_widget.place_forget()
+        
+# MAP APP SIZE ====================================================================================
 
         self.map_controls_frame = ctk.CTkFrame(master=self.main_frame, width=150, height=220, corner_radius=0, fg_color=None)
         self.map_controls_frame.place_forget()
-
         self.create_map_controls()
-        self.create_stat_page()
         self.create_nav_buttons()
+        
+# MAP CONTROLS FOR MAP TAB (MARKERS, BUTTONS, DISTANCE CALCULATIONS) ==============================
 
     def create_map_controls(self):
         self.label_marker1 = ctk.CTkLabel(master=self.map_controls_frame, text="Marker 1:", anchor="w")
         self.label_marker1.pack(pady=(2, 0), padx=(1, 10))
-
         self.entry_marker1 = ctk.CTkEntry(master=self.map_controls_frame, placeholder_text="Paste your coords...")
         self.entry_marker1.pack(pady=(2, 0), padx=(10, 10))
-
         self.button_add_marker1 = ctk.CTkButton(master=self.map_controls_frame, text="Add Marker 1", command=self.add_marker1_event)
         self.button_add_marker1.pack(pady=(1, 5), padx=(10, 10))
+
+        self.label_marker2 = ctk.CTkLabel(master=self.map_controls_frame, text="Marker 2:", anchor="w")
+        self.label_marker2.pack(pady=(5, 0), padx=(10, 10))
+        self.entry_marker2 = ctk.CTkEntry(master=self.map_controls_frame, placeholder_text="Paste your coords...")
+        self.entry_marker2.pack(pady=(5, 0), padx=(10, 10))
+        self.button_add_marker2 = ctk.CTkButton(master=self.map_controls_frame, text="Add Marker 2", command=self.add_marker2_event)
+        self.button_add_marker2.pack(pady=(1, 10), padx=(10, 10))
 
         self.button_clear_markers = ctk.CTkButton(master=self.map_controls_frame, text="Clear Markers", command=self.clear_marker_event)
         self.button_clear_markers.pack(pady=(5, 10), padx=(10, 10))
 
-    def create_stat_page(self):
-        self.stats_frame = ctk.CTkFrame(master=self.main_frame, width=150, height=220, corner_radius=0, fg_color=None)
-        self.stats_frame.place_forget()
+        self.map_label = ctk.CTkLabel(self.map_controls_frame, text="Tile Server:", anchor="w")
+        self.map_label.pack(pady=(1, 0), padx=(10, 10))
+        self.map_option_menu = ctk.CTkOptionMenu(self.map_controls_frame, values=["OpenStreetMap", "Google normal", "Google satellite"], command=self.change_map)
+        self.map_option_menu.pack(pady=(1, 5), padx=(10, 10))
+        self.distance_label = ctk.CTkLabel(self.map_controls_frame, text="Distance: ", anchor="w")
+        self.distance_label.pack(pady=(5, 35), padx=(10, 10))
+        self.map_option_menu.set("OpenStreetMap")
+        
+ # GRABBING CORDS FOR THE MAP WIDGET CAN BE TURNED INTO AN AUTO FUNCTION ===========================
+ 
+    def add_marker1_event(self):
+        coords = self.entry_marker1.get().strip().split()
+        if len(coords) == 2:
+            self.add_marker(1, float(coords[0]), float(coords[1]))
 
-        self.stats_label = ctk.CTkLabel(self.stats_frame, text="Stats Page", anchor="center")
-        self.stats_label.pack(pady=(10, 0), padx=(10, 10))
+    def add_marker2_event(self):
+        coords = self.entry_marker2.get().strip().split()
+        if len(coords) == 2:
+            self.add_marker(2, float(coords[0]), float(coords[1]))
 
-        self.stats_data_label = ctk.CTkLabel(self.stats_frame, text="", anchor="center", font=("Roboto", 12))
-        self.stats_data_label.pack(pady=(20, 10), padx=(10, 10))
+    def add_marker(self, marker_number, lat, lon):
+        marker = self.map_widget.set_marker(lat, lon, text=f"Marker {marker_number}")
+        self.marker_list.append(marker)
+        if len(self.marker_list) == 2:
+            self.calculate_distance()
+
+    def clear_marker_event(self):
+        self.map_widget.delete_all_marker()
+        self.marker_list.clear()
+        self.distance_label.configure(text="Distance: ")
+        
+# DISTANCE CALCS ===================================================================================
+
+    def calculate_distance(self):
+        if len(self.marker_list) == 2:
+            coords_1 = self.marker_list[0].position
+            coords_2 = self.marker_list[1].position
+            distance = geodesic(coords_1, coords_2).meters
+            self.distance_label.configure(text=f"Distance: {distance:.2f} meters")
+
+    def change_map(self, map_type):
+        tile_servers = {
+            "OpenStreetMap": "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png",
+            "Google normal": "https://mt1.google.com/vt/lyrs=r&x={x}&y={y}&z={z}",
+            "Google satellite": "https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}",
+        }
+        self.map_widget.set_tile_server(tile_servers[map_type]) 
+        
+# NAVAGATIONAL BUTTONS CAN BE ADJUSTED =============================================================
 
     def create_nav_buttons(self):
         self.nav_buttons_frame = ctk.CTkFrame(master=self.frame, height=50, corner_radius=0)
         self.nav_buttons_frame.pack(side="bottom", fill="x")
 
-        buttons = [
-            ("MAIN", self.switch_to_webcam),
-            ("MAP", self.switch_to_map),
-            ("STAT", self.switch_to_stat),
-            ("QUIT", self.on_closing),
-        ]
-        for btn_text, command in buttons:
+        for btn_text, command in [("MAIN", self.switch_to_webcam), ("MAP", self.switch_to_map), 
+                                  ("STAT", self.switch_to_stat), ("SNAP", self.take_screenshot), 
+                                  ("SETT", self.switch_to_sett), ("QUIT", self.on_closing)]:
             self.create_nav_button(btn_text, command)
 
     def create_nav_button(self, text, command):
         button = ctk.CTkButton(master=self.nav_buttons_frame, text=text, command=command, width=70, height=30)
         button.pack(side="left", padx=6, pady=4)
 
-    def switch_to_webcam(self):
-        self.webcam_label.pack()
-        self.map_widget.place_forget()
-        self.map_controls_frame.place_forget()
-        self.stats_frame.place_forget()
+# SCREENSHOT OF UI ============================================================
 
-    def switch_to_map(self):
-        self.webcam_label.pack_forget()
-        self.stats_frame.place_forget()
-        self.map_controls_frame.place(x=0, y=0)
-        self.map_widget.place(x=0, y=0)
+    def take_screenshot(self):
+        # Capture the current screen
+        screenshot = ImageGrab.grab()
 
-    def switch_to_stat(self):
-        self.webcam_label.pack_forget()
-        self.map_widget.place_forget()
-        self.map_controls_frame.place_forget()
-        self.stats_frame.place(x=0, y=0)
-        self.update_stats_data()
+        # Save the screenshot with a timestamp in the filename
+        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        screenshot.save(f"screenshot_{timestamp}.png")
 
-    def update_stats_data(self):
-        data_text = (
-            f"Altitude: {altStr}\n"
-            f"Latitude: {latStr}\n"
-            f"Longitude: {lonStr}\n"
-            f"Angle: {angStr}\n"
-            f"Pressure: {pressure}\n"
-            f"Pressure Diff: {dPressureStr}\n"
-            f"Sent Packets: {sentPKT}\n"
-            f"Received Packets: {receivedPKT}\n"
-            f"Missed Packets: {missedPKT}\n"
-        )
-        self.stats_data_label.configure(text=data_text)
+        print(f"Screenshot saved as screenshot_{timestamp}.png")
+
+# WEBCAM SETUP ====================================================================================
 
     def start_webcam_thread(self):
         self.thread = threading.Thread(target=self.show_webcam)
@@ -160,10 +259,30 @@ class App(ctk.CTk):
         self.thread.start()
 
     def show_webcam(self):
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(0) # CHANGE VALUE IF WEBCAM IS NOT SHOWING ==============
         while cap.isOpened():
+
+            handle_buttons()
+            pilotLat, pilotLon = get_gps_data()
+            send_control_data(servoAng)
+            
+            #receive packet
+            packet_text = receive_packet()
+            #check if empty
+            if packet_text:
+                #split data into array of values
+                altStr, latStr, lonStr, angStr, dPressureStr = split_packet(packet_text)
+                #check if array is occupied
+                if altStr is not None:
+                    print(altStr)
+                    print(latStr)
+                    print(lonStr)
+                    print(angStr)
             ret, frame = cap.read()
-            if ret:
+            if ret: # CROSSHAIR ========================================================
+                height, width, _ = frame.shape
+                cv2.line(frame, (width // 2 - 8, height // 2), (width // 2 + 8, height // 2), (0, 255, 0), 2)
+                cv2.line(frame, (width // 2, height // 2 - 8), (width // 2, height // 2 + 8), (0, 255, 0), 2)
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frame = cv2.resize(frame, (580, 350))
                 img = Image.fromarray(frame)
@@ -173,70 +292,33 @@ class App(ctk.CTk):
             if cv2.waitKey(1) == ord('q'):
                 break
         cap.release()
+        
+#  TOGGLE SWITCHING BETWEEN DIFFERENT SCREENS IN THE UI ===========================================
 
-    def start_data_thread(self):
-        self.data_thread = threading.Thread(target=self.data_loop)
-        self.data_thread.daemon = True
-        self.data_thread.start()
+    def switch_to_webcam(self):
+        self.map_widget.place_forget()
+        self.map_controls_frame.place_forget()
+        self.webcam_label.pack()
 
-    def data_loop(self):
-        global altStr, latStr, lonStr, angStr, dPressureStr, pressure, sentPKT, receivedPKT, missedPKT
-        while True:
-            handle_buttons()
-            update_pressure()
-            send_control_data(servoAng, pressure)
-            packet_text = receive_packet()
-            if packet_text:
-                altStr, latStr, lonStr, angStr, dPressureStr = split_packet(packet_text)
-            time.sleep(1)
+    def switch_to_map(self):
+        self.webcam_label.pack_forget()
+        self.map_controls_frame.place(x=0, y=0)
+        self.map_widget.place(x=0, y=0)
+
+    def switch_to_stat(self):
+        self.webcam_label.pack_forget()
+        self.map_widget.place_forget()
+        self.map_controls_frame.place_forget()
+
+    def switch_to_sett(self):
+        self.webcam_label.pack_forget()
+        self.map_widget.place_forget()
+        self.map_controls_frame.place_forget()
 
     def on_closing(self):
         self.destroy()
 
-# Supporting functions from second code
-def handle_buttons():
-    global servoAng
-    button1_pressed = not GPIO.input(BUTTON1_PIN)
-    button2_pressed = not GPIO.input(BUTTON2_PIN)
-
-    if button1_pressed:
-        servoAng += 5  # Increment servo angle
-    if button2_pressed:
-        servoAng -= 5  # Decrement servo angle
-
-    # Limit the angle range between 0 and 180 degrees
-    servoAng = max(0, min(180, servoAng))
-
-def update_pressure():
-    global pressure
-    pressure = dataLogScript.get_current_pressure()  # Get current pressure from module
-
-def send_control_data(servo_ang, pressure):
-    control_data = f"S:{servo_ang},P:{pressure}"
-    rfm69.send(bytes(control_data, "utf-8"))  # Send control data
-
-def receive_packet():
-    packet = None
-    if rfm69.available():
-        packet = rfm69.receive()
-        if packet is not None:
-            return packet.decode("utf-8")
-    return None
-
-def split_packet(packet_text):
-    try:
-        data = packet_text.split(",")
-        alt_str = data[0].split(":")[1]
-        lat_str = data[1].split(":")[1]
-        lon_str = data[2].split(":")[1]
-        ang_str = data[3].split(":")[1]
-        d_pressure_str = data[4].split(":")[1]
-        return alt_str, lat_str, lon_str, ang_str, d_pressure_str
-    except (IndexError, ValueError):
-        return "N/A", "N/A", "N/A", "N/A", "N/A"
-
-# Main function to start the application
 if __name__ == "__main__":
     app = App()
-    app.mainloop()
-
+    app.mainloop()            
+        
